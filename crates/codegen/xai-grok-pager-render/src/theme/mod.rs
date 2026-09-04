@@ -15,6 +15,7 @@ mod groknight;
 pub mod md_style;
 pub mod osc11;
 mod oscura;
+mod dracula;
 mod rosepine;
 pub mod system_appearance;
 mod terminal_default;
@@ -30,6 +31,9 @@ pub enum ThemeKind {
     TokyoNight = 2,
     RosePineMoon = 3,
     OscuraMidnight = 5,
+    Dracula = 6,
+    /// Dracula accents with Reset backgrounds so terminal (e.g. Ghostty) transparency shows through.
+    DraculaTransparent = 7,
     /// Meta-variant: follow system dark/light appearance.
     ///
     /// Resolved to a concrete theme at startup and on live appearance changes.
@@ -46,6 +50,8 @@ impl ThemeKind {
         ThemeKind::TokyoNight,
         ThemeKind::RosePineMoon,
         ThemeKind::OscuraMidnight,
+        ThemeKind::Dracula,
+        ThemeKind::DraculaTransparent,
     ];
 
     /// Theme kinds available on the current terminal.
@@ -70,6 +76,8 @@ impl ThemeKind {
             Self::GrokDay => "grokday",
             Self::RosePineMoon => "rosepine-moon",
             Self::OscuraMidnight => "oscura-midnight",
+            Self::Dracula => "dracula",
+            Self::DraculaTransparent => "dracula-transparent",
             Self::Auto => "auto",
         }
     }
@@ -85,6 +93,9 @@ impl ThemeKind {
             Self::GrokDay => false,
             Self::RosePineMoon => true,
             Self::OscuraMidnight => true,
+            Self::Dracula => true,
+            // Transparent variant uses Reset bg + RGB accents; still wants truecolor.
+            Self::DraculaTransparent => true,
             // Auto is resolved to a concrete theme before rendering.
             Self::Auto => false,
         }
@@ -103,6 +114,10 @@ impl ThemeKind {
                 Some(Self::RosePineMoon)
             }
             "oscura" | "oscura-midnight" => Some(Self::OscuraMidnight),
+            "dracula" => Some(Self::Dracula),
+            "dracula-transparent" | "dracula-ghostty" | "dracula-term" => {
+                Some(Self::DraculaTransparent)
+            }
             _ => None,
         }
     }
@@ -138,6 +153,9 @@ pub fn display_name_for_canonical(value: &str) -> &str {
         "grokday" => "Grok Day",
         "tokyonight" => "Tokyo Night",
         "rosepine-moon" => "Rose Pine Moon",
+        "oscura-midnight" => "Oscura Midnight",
+        "dracula" => "Dracula",
+        "dracula-transparent" => "Dracula (Terminal Transparent)",
         other => other,
     }
 }
@@ -261,6 +279,8 @@ impl Theme {
             ThemeKind::GrokDay => Self::grokday(),
             ThemeKind::RosePineMoon => Self::rosepine_moon(),
             ThemeKind::OscuraMidnight => Self::oscura_midnight(),
+            ThemeKind::Dracula => Self::dracula(),
+            ThemeKind::DraculaTransparent => Self::dracula_transparent(),
             // Auto is resolved to a concrete theme before being stored; if reached, fall back to GrokNight
             ThemeKind::Auto => Self::groknight(),
         };
@@ -623,6 +643,8 @@ mod tests {
         assert!(!ThemeKind::TokyoNight.is_auto());
         assert!(!ThemeKind::RosePineMoon.is_auto());
         assert!(!ThemeKind::OscuraMidnight.is_auto());
+        assert!(!ThemeKind::Dracula.is_auto());
+        assert!(!ThemeKind::DraculaTransparent.is_auto());
     }
 
     #[test]
@@ -642,6 +664,7 @@ mod tests {
         assert!(Theme::tokyonight().is_dark());
         assert!(Theme::rosepine_moon().is_dark());
         assert!(Theme::oscura_midnight().is_dark());
+        assert!(Theme::dracula().is_dark());
         assert!(!Theme::grokday().is_dark());
     }
 
@@ -948,8 +971,16 @@ mod tests {
                 ThemeKind::TokyoNight => Theme::tokyonight(),
                 ThemeKind::RosePineMoon => Theme::rosepine_moon(),
                 ThemeKind::OscuraMidnight => Theme::oscura_midnight(),
+                ThemeKind::Dracula => Theme::dracula(),
+                ThemeKind::DraculaTransparent => Theme::dracula_transparent(),
                 ThemeKind::Auto => unreachable!("ALL excludes Auto"),
             };
+            // Skip themes that intentionally inherit the terminal canvas for track/thumb.
+            if !matches!(theme.scrollbar_bg, Color::Rgb(_, _, _))
+                || !matches!(theme.scrollbar_fg, Color::Rgb(_, _, _))
+            {
+                continue;
+            }
             let track = lum(theme.scrollbar_bg, "scrollbar_bg", kind);
             let thumb = lum(theme.scrollbar_fg, "scrollbar_fg", kind);
             let delta = thumb - track;
@@ -1087,6 +1118,15 @@ mod tests {
         assert_eq!(
             ThemeKind::from_name("oscura-midnight"),
             Some(ThemeKind::OscuraMidnight)
+        );
+        assert_eq!(ThemeKind::from_name("dracula"), Some(ThemeKind::Dracula));
+        assert_eq!(
+            ThemeKind::from_name("dracula-transparent"),
+            Some(ThemeKind::DraculaTransparent)
+        );
+        assert_eq!(
+            ThemeKind::from_name("dracula-ghostty"),
+            Some(ThemeKind::DraculaTransparent)
         );
     }
 

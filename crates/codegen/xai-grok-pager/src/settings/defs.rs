@@ -67,6 +67,16 @@ const THEME_CHOICES: &[EnumChoice] = &[
         display: "Oscura Midnight",
         description: "Deep dark with warm accents; needs truecolor.",
     },
+    EnumChoice {
+        canonical: "dracula",
+        display: "Dracula",
+        description: "Classic Dracula palette; needs truecolor.",
+    },
+    EnumChoice {
+        canonical: "dracula-transparent",
+        display: "Dracula (Terminal Transparent)",
+        description: "Dracula accents with terminal/Ghostty transparent background.",
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -495,6 +505,16 @@ const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
         canonical: "oscura-midnight",
         display: "Oscura Midnight",
         description: "Deep dark with warm accents; needs truecolor.",
+    },
+    EnumChoice {
+        canonical: "dracula",
+        display: "Dracula",
+        description: "Classic Dracula palette; needs truecolor.",
+    },
+    EnumChoice {
+        canonical: "dracula-transparent",
+        display: "Dracula (Terminal Transparent)",
+        description: "Dracula accents with terminal/Ghostty transparent background.",
     },
 ];
 
