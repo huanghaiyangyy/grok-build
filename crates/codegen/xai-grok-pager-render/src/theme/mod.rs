@@ -15,6 +15,7 @@ mod groknight;
 pub mod md_style;
 pub mod osc11;
 mod oscura;
+mod dracula;
 mod rosepine;
 pub mod system_appearance;
 mod terminal_default;
@@ -35,7 +36,9 @@ pub enum ThemeKind {
     /// Every bg is `Reset` so the terminal canvas shows through; legible on both polarities without appearance detection.
     /// Hidden and unparseable while `cache::terminal_theme_enabled()` is off.
     Terminal = 6,
-    /// Follow system appearance. Disk stores `"auto"`; `cache::CURRENT` holds only the resolved concrete kind. Excluded from [`ALL`].
+    Dracula = 7,
+    /// Dracula accents with Reset backgrounds so terminal (e.g. Ghostty) transparency shows through.
+    DraculaTransparent = 8,
     Auto = 4,
 }
 
@@ -48,6 +51,8 @@ impl ThemeKind {
         ThemeKind::RosePineMoon,
         ThemeKind::OscuraMidnight,
         ThemeKind::Terminal,
+        ThemeKind::Dracula,
+        ThemeKind::DraculaTransparent,
     ];
 
     /// [`ALL`] minus gated `terminal`. Ignores color capability ([`available()`] filters that). Derived from [`ALL`] so a new theme cannot be omitted.
@@ -102,6 +107,8 @@ impl ThemeKind {
             Self::RosePineMoon => "rosepine-moon",
             Self::OscuraMidnight => "oscura-midnight",
             Self::Terminal => "terminal",
+            Self::Dracula => "dracula",
+            Self::DraculaTransparent => "dracula-transparent",
             Self::Auto => "auto",
         }
     }
@@ -116,6 +123,9 @@ impl ThemeKind {
             Self::OscuraMidnight => true,
             // Reset plus named ANSI-16 entries only — nothing to quantize.
             Self::Terminal => false,
+            Self::Dracula => true,
+            // Transparent variant uses Reset bg + RGB accents; still wants truecolor.
+            Self::DraculaTransparent => true,
             // Auto is resolved to a concrete theme before rendering.
             Self::Auto => false,
         }
@@ -143,6 +153,10 @@ impl ThemeKind {
             "oscura" | "oscura-midnight" => Some(Self::OscuraMidnight),
             "terminal" | "terminal-default" | "transparent" | "native" => {
                 cache::terminal_theme_enabled().then_some(Self::Terminal)
+            }
+            "dracula" => Some(Self::Dracula),
+            "dracula-transparent" | "dracula-ghostty" | "dracula-term" => {
+                Some(Self::DraculaTransparent)
             }
             _ => None,
         }
@@ -179,7 +193,10 @@ pub fn display_name_for_canonical(value: &str) -> &str {
         "grokday" => "Grok Day",
         "tokyonight" => "Tokyo Night",
         "rosepine-moon" => "Rose Pine Moon",
+        "oscura-midnight" => "Oscura Midnight",
         "terminal" => "Terminal",
+        "dracula" => "Dracula",
+        "dracula-transparent" => "Dracula (Terminal Transparent)",
         other => other,
     }
 }
@@ -298,6 +315,8 @@ impl Theme {
             ThemeKind::OscuraMidnight => Self::oscura_midnight(),
             // Handled by the early return above.
             ThemeKind::Terminal => Self::terminal(),
+            ThemeKind::Dracula => Self::dracula(),
+            ThemeKind::DraculaTransparent => Self::dracula_transparent(),
             // Auto is resolved to a concrete theme before being stored; if reached, fall back to GrokNight
             ThemeKind::Auto => Self::groknight(),
         };
@@ -655,6 +674,8 @@ mod tests {
         assert!(!ThemeKind::TokyoNight.is_auto());
         assert!(!ThemeKind::RosePineMoon.is_auto());
         assert!(!ThemeKind::OscuraMidnight.is_auto());
+        assert!(!ThemeKind::Dracula.is_auto());
+        assert!(!ThemeKind::DraculaTransparent.is_auto());
     }
 
     #[test]
@@ -696,6 +717,7 @@ mod tests {
         assert!(Theme::tokyonight().is_dark());
         assert!(Theme::rosepine_moon().is_dark());
         assert!(Theme::oscura_midnight().is_dark());
+        assert!(Theme::dracula().is_dark());
         assert!(!Theme::grokday().is_dark());
     }
 
@@ -994,8 +1016,16 @@ mod tests {
                 // Reset plus named ANSI entries: the scrollbar rides the
                 // terminal's own fg/bg contrast, so there is no RGB delta.
                 ThemeKind::Terminal => continue,
+                ThemeKind::Dracula => Theme::dracula(),
+                ThemeKind::DraculaTransparent => Theme::dracula_transparent(),
                 ThemeKind::Auto => unreachable!("ALL excludes Auto"),
             };
+            // Skip themes that intentionally inherit the terminal canvas for track/thumb.
+            if !matches!(theme.scrollbar_bg, Color::Rgb(_, _, _))
+                || !matches!(theme.scrollbar_fg, Color::Rgb(_, _, _))
+            {
+                continue;
+            }
             let track = lum(theme.scrollbar_bg, "scrollbar_bg", kind);
             let thumb = lum(theme.scrollbar_fg, "scrollbar_fg", kind);
             let delta = thumb - track;
@@ -1122,6 +1152,15 @@ mod tests {
         assert_eq!(
             ThemeKind::from_name("oscura-midnight"),
             Some(ThemeKind::OscuraMidnight)
+        );
+        assert_eq!(ThemeKind::from_name("dracula"), Some(ThemeKind::Dracula));
+        assert_eq!(
+            ThemeKind::from_name("dracula-transparent"),
+            Some(ThemeKind::DraculaTransparent)
+        );
+        assert_eq!(
+            ThemeKind::from_name("dracula-ghostty"),
+            Some(ThemeKind::DraculaTransparent)
         );
     }
 

@@ -64,6 +64,16 @@ const THEME_CHOICES: &[EnumChoice] = &[
         display: "Terminal",
         description: "Terminal's own background and text colors.",
     },
+    EnumChoice {
+        canonical: "dracula",
+        display: "Dracula",
+        description: "Classic Dracula palette; needs truecolor.",
+    },
+    EnumChoice {
+        canonical: "dracula-transparent",
+        display: "Dracula (Terminal Transparent)",
+        description: "Dracula accents with terminal/Ghostty transparent background.",
+    },
 ];
 
 // Permission-mode catalog. Persisted values map onto runtime flags: "always-approve" ↔ yolo_mode = true
@@ -450,6 +460,16 @@ const CONCRETE_THEME_CHOICES: &[EnumChoice] = &[
         canonical: "terminal",
         display: "Terminal",
         description: "Terminal's own background and text colors.",
+    },
+    EnumChoice {
+        canonical: "dracula",
+        display: "Dracula",
+        description: "Classic Dracula palette; needs truecolor.",
+    },
+    EnumChoice {
+        canonical: "dracula-transparent",
+        display: "Dracula (Terminal Transparent)",
+        description: "Dracula accents with terminal/Ghostty transparent background.",
     },
 ];
 
