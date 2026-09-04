@@ -1,0 +1,109 @@
+name: Build Linux (Ubuntu 22.04)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/dracula-and-terminal-transparency
+      - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-linux-x86_64:
+    name: linux-x86_64 (ubuntu-22.04)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            curl \
+            ca-certificates \
+            protobuf-compiler
+
+      - name: Install Rust (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.0"
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "."
+          shared-key: grok-build-linux-x86_64
+
+      - name: Install DotSlash
+        run: |
+          cargo install dotslash --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          /usr/bin/env dotslash --help >/dev/null
+
+      - name: Warm bin/protoc via DotSlash
+        run: |
+          chmod +x bin/protoc || true
+          ./bin/protoc --version
+
+      - name: Release build
+        run: cargo build -p xai-grok-pager-bin --release
+
+      - name: Package artifact
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          BIN="target/release/xai-grok-pager"
+          test -x "$BIN"
+          cp -a "$BIN" dist/xai-grok-pager
+          # Official installs ship the same binary as `grok`
+          cp -a "$BIN" dist/grok
+          chmod +x dist/xai-grok-pager dist/grok
+          "$BIN" --version > dist/VERSION.txt || true
+          cat > dist/INSTALL.txt <<'TXT'
+          Ubuntu 22.04 / glibc x86_64 drop-in for official `grok`
+
+          1. Stop any running grok session.
+          2. Backup the official binary, then replace it:
+
+               which grok
+               sudo cp "$(which grok)" "$(which grok).official.bak"
+               sudo cp ./grok "$(which grok)"
+               # or install into ~/bin:
+               # mkdir -p ~/bin && cp ./grok ~/bin/grok && chmod +x ~/bin/grok
+
+          3. Verify:
+
+               grok --version
+               # then: /theme → pick Dracula or Dracula (Terminal Transparent)
+          TXT
+          # strip leading spaces from heredoc above for readability
+          sed -i 's/^          //' dist/INSTALL.txt
+          (cd dist && sha256sum xai-grok-pager grok > SHA256SUMS)
+          ls -lh dist
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-linux-x86_64-ubuntu22.04
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
