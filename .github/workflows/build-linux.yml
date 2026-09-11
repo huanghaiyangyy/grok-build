@@ -55,12 +55,17 @@ jobs:
               apt-get update
               apt-get install -y --no-install-recommends \
                 build-essential \
+                gcc-10 g++-10 \
+                clang \
                 cmake \
                 pkg-config \
                 curl \
                 ca-certificates \
                 unzip \
                 git
+
+              export CC=clang
+              export CXX=clang++
 
               # Install official protoc 29.3
               curl -fsSL https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip -o /tmp/protoc.zip
