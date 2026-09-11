@@ -1,11 +1,24 @@
-name: Build Linux (Ubuntu 22.04)
+name: Build & Release Linux
 
 on:
   workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a GitHub Release'
+        required: false
+        type: boolean
+        default: true
+      release_tag:
+        description: 'Release tag name (e.g. v1.0.24)'
+        required: false
+        type: string
+        default: 'v1.0.24'
   push:
     branches:
-      - feat/dracula-and-terminal-transparency
       - main
+      - feat/dracula-and-terminal-transparency
+    tags:
+      - 'v*'
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -15,14 +28,100 @@ on:
       - "docs/**"
 
 permissions:
-  contents: read
+  contents: write
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  build-linux-x86_64:
+  build-linux-ubuntu2004:
+    name: linux-x86_64 (ubuntu-20.04)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build in Ubuntu 20.04 container
+        run: |
+          docker run --rm \
+            -e DEBIAN_FRONTEND=noninteractive \
+            -v "$GITHUB_WORKSPACE":/workspace \
+            -w /workspace \
+            ubuntu:20.04 bash -c '
+              set -euxo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                build-essential \
+                cmake \
+                pkg-config \
+                curl \
+                ca-certificates \
+                unzip \
+                git
+
+              # Install official protoc 29.3
+              curl -fsSL https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-x86_64.zip -o /tmp/protoc.zip
+              unzip -q /tmp/protoc.zip -d /usr/local bin/protoc
+              rm -f /tmp/protoc.zip
+              export PROTOC=/usr/local/bin/protoc
+              $PROTOC --version
+
+              # Install Rust 1.94.0
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.94.0
+              source "$HOME/.cargo/env"
+
+              # Build release binary (limiting to 4 jobs)
+              cargo build -p xai-grok-pager-bin --release -j4
+
+              # Verify GLIBC requirements
+              echo "=== Verifying GLIBC requirements ==="
+              readelf -V target/release/xai-grok-pager | grep -o "GLIBC_[0-9.]*" | sort -V -u | tail -n 5
+
+              # Prepare package
+              mkdir -p dist-ubuntu20.04
+              BIN="target/release/xai-grok-pager"
+              test -x "$BIN"
+              cp -a "$BIN" dist-ubuntu20.04/xai-grok-pager
+              cp -a "$BIN" dist-ubuntu20.04/grok
+              chmod +x dist-ubuntu20.04/xai-grok-pager dist-ubuntu20.04/grok
+              "$BIN" --version > dist-ubuntu20.04/VERSION.txt || true
+
+              cat > dist-ubuntu20.04/INSTALL.txt << "EOF"
+              Ubuntu 20.04 / glibc 2.31 compatible drop-in for official `grok`
+
+              1. Stop any running grok session.
+              2. Replace or install the binary:
+
+                   mkdir -p ~/.local/bin
+                   cp ./grok ~/.local/bin/grok
+                   chmod +x ~/.local/bin/grok
+
+              3. Verify:
+
+                   grok --version
+                   # Supported themes: /theme -> Dracula or Dracula (Terminal Transparent)
+              EOF
+              sed -i "s/^              //" dist-ubuntu20.04/INSTALL.txt
+
+              tar -czvf dist-ubuntu20.04/grok-1.0.24-linux-x86_64-ubuntu20.04.tar.gz -C dist-ubuntu20.04 grok xai-grok-pager VERSION.txt INSTALL.txt
+              (cd dist-ubuntu20.04 && sha256sum grok-1.0.24-linux-x86_64-ubuntu20.04.tar.gz > SHA256SUMS.txt)
+
+              # Fix permissions for host runner
+              chown -R '$(id -u):$(id -g)' /workspace/dist-ubuntu20.04 /workspace/target || true
+            '
+
+      - name: Upload Ubuntu 20.04 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-linux-x86_64-ubuntu20.04
+          path: dist-ubuntu20.04/
+          if-no-files-found: error
+          retention-days: 30
+
+  build-linux-ubuntu2204:
     name: linux-x86_64 (ubuntu-22.04)
     runs-on: ubuntu-22.04
     timeout-minutes: 180
@@ -40,7 +139,8 @@ jobs:
             pkg-config \
             curl \
             ca-certificates \
-            protobuf-compiler
+            protobuf-compiler \
+            unzip
 
       - name: Install Rust (pinned by rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@stable
@@ -65,20 +165,19 @@ jobs:
           ./bin/protoc --version
 
       - name: Release build
-        run: cargo build -p xai-grok-pager-bin --release
+        run: cargo build -p xai-grok-pager-bin --release -j4
 
       - name: Package artifact
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p dist-ubuntu22.04
           BIN="target/release/xai-grok-pager"
           test -x "$BIN"
-          cp -a "$BIN" dist/xai-grok-pager
-          # Official installs ship the same binary as `grok`
-          cp -a "$BIN" dist/grok
-          chmod +x dist/xai-grok-pager dist/grok
-          "$BIN" --version > dist/VERSION.txt || true
-          cat > dist/INSTALL.txt <<'TXT'
+          cp -a "$BIN" dist-ubuntu22.04/xai-grok-pager
+          cp -a "$BIN" dist-ubuntu22.04/grok
+          chmod +x dist-ubuntu22.04/xai-grok-pager dist-ubuntu22.04/grok
+          "$BIN" --version > dist-ubuntu22.04/VERSION.txt || true
+          cat > dist-ubuntu22.04/INSTALL.txt <<'TXT'
           Ubuntu 22.04 / glibc x86_64 drop-in for official `grok`
 
           1. Stop any running grok session.
@@ -95,15 +194,77 @@ jobs:
                grok --version
                # then: /theme → pick Dracula or Dracula (Terminal Transparent)
           TXT
-          # strip leading spaces from heredoc above for readability
-          sed -i 's/^          //' dist/INSTALL.txt
-          (cd dist && sha256sum xai-grok-pager grok > SHA256SUMS)
-          ls -lh dist
+          sed -i 's/^          //' dist-ubuntu22.04/INSTALL.txt
+          tar -czvf dist-ubuntu22.04/grok-1.0.24-linux-x86_64-ubuntu22.04.tar.gz -C dist-ubuntu22.04 grok xai-grok-pager VERSION.txt INSTALL.txt
+          (cd dist-ubuntu22.04 && sha256sum grok-1.0.24-linux-x86_64-ubuntu22.04.tar.gz > SHA256SUMS.txt)
 
-      - name: Upload Linux artifact
+      - name: Upload Ubuntu 22.04 Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grok-linux-x86_64-ubuntu22.04
-          path: dist/
+          path: dist-ubuntu22.04/
           if-no-files-found: error
           retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-linux-ubuntu2004, build-linux-ubuntu2204]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.create_release == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Ubuntu 20.04 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: grok-linux-x86_64-ubuntu20.04
+          path: release-assets/ubuntu20.04
+
+      - name: Download Ubuntu 22.04 Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: grok-linux-x86_64-ubuntu22.04
+          path: release-assets/ubuntu22.04
+
+      - name: Prepare Release Assets
+        run: |
+          mkdir -p release-files
+          cp release-assets/ubuntu20.04/grok-1.0.24-linux-x86_64-ubuntu20.04.tar.gz release-files/
+          cp release-assets/ubuntu22.04/grok-1.0.24-linux-x86_64-ubuntu22.04.tar.gz release-files/
+          (cd release-files && sha256sum *.tar.gz > SHA256SUMS.txt)
+          ls -lh release-files
+
+      - name: Determine Tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.release_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Grok Build ${{ steps.tag.outputs.tag }}
+          body: |
+            ## Grok Build ${{ steps.tag.outputs.tag }}
+
+            Pre-built Linux x86_64 binaries including **Ubuntu 20.04 (glibc 2.31)** and **Ubuntu 22.04 (glibc 2.35)** builds.
+
+            ### Assets
+            - `grok-1.0.24-linux-x86_64-ubuntu20.04.tar.gz`: Built inside Ubuntu 20.04 container, compatible with `glibc >= 2.31`.
+            - `grok-1.0.24-linux-x86_64-ubuntu22.04.tar.gz`: Built on Ubuntu 22.04, compatible with `glibc >= 2.35`.
+            - `SHA256SUMS.txt`: SHA256 checksums for verifying asset integrity.
+
+            ### Features
+            - Built from `huanghaiyangyy/grok-build`
+            - Built-in Dracula theme and terminal transparency support (`/theme dracula-transparent`)
+            - Fully compatible drop-in replacement for the official `grok` CLI
+          files: |
+            release-files/*
+          draft: false
+          prerelease: false
